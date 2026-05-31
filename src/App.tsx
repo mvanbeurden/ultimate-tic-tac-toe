@@ -1,32 +1,42 @@
-import { useMemo, useState } from 'react';
-import LargeBoard from './components/LargeBoard';
-import { createInitialState, getLegalBoardIndexes, playMove } from './game/engine';
+import { useState } from 'react';
+import { createInitialState, getLegalBoards, playMove, resetGame } from './game/engine';
+import { LargeBoard } from './components/LargeBoard';
 
-export default function App() {
-  const [state, setState] = useState(createInitialState);
-  const legalBoards = useMemo(() => getLegalBoardIndexes(state), [state]);
+export function App() {
+  const [game, setGame] = useState(createInitialState);
+  const [notice, setNotice] = useState('');
+  const legalBoards = getLegalBoards(game);
+
+  function onCellClick(boardIndex: number, cellIndex: number) {
+    const result = playMove(game, boardIndex, cellIndex);
+    if (result.accepted) {
+      setGame(result.state);
+      setNotice('');
+    } else {
+      setNotice('That move is not allowed. Use a highlighted board and an empty cell.');
+    }
+  }
 
   return (
-    <main className="app-shell">
-      <header>
-        <p className="eyebrow">First playable MVP</p>
+    <main className="app">
+      <section className="hero">
+        <p className="eyebrow">First playable concept</p>
         <h1>Ultimate Tic-Tac-Toe</h1>
-        <p className="status" role="status">{state.message}</p>
-      </header>
+        <p className="status" role="status">{game.message}</p>
+        {notice && <p className="notice">{notice}</p>}
+      </section>
 
-      <LargeBoard
-        state={state}
-        legalBoards={legalBoards}
-        onMove={(boardIndex, cellIndex) => setState((current) => playMove(current, { boardIndex, cellIndex }))}
-      />
+      <LargeBoard game={game} legalBoards={legalBoards} onCellClick={onCellClick} />
 
-      <section className="controls">
-        <button className="reset" onClick={() => setState(createInitialState())}>Reset game</button>
-        <div className="rules">
+      <section className="panel">
+        <button onClick={() => setGame(resetGame(game))}>Reset game</button>
+        <div>
           <h2>Rules</h2>
-          <p>Play in a cell to send your opponent to the matching large board. Win small boards to claim the big board. If the target board is finished, play anywhere unfinished.</p>
+          <p>Play in a cell to send your opponent to the matching large-board position. Win small boards to claim spaces on the large board. If that board is already won or full, they may play anywhere unfinished.</p>
         </div>
       </section>
     </main>
   );
 }
+
+export default App;

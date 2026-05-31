@@ -1,37 +1,28 @@
-import type { SmallBoard as SmallBoardState } from '../game/types';
+import type { SmallBoardState } from '../game/engine';
 
 interface Props {
   board: SmallBoardState;
   boardIndex: number;
   isLegal: boolean;
-  onMove: (boardIndex: number, cellIndex: number) => void;
+  onCellClick: (boardIndex: number, cellIndex: number) => void;
 }
 
-function resultLabel(board: SmallBoardState): string | null {
-  if (!board.result) return null;
-  if ('winner' in board.result) return board.result.winner;
-  return 'Draw';
-}
-
-export default function SmallBoard({ board, boardIndex, isLegal, onMove }: Props) {
-  const label = resultLabel(board);
+export function SmallBoard({ board, boardIndex, isLegal, onCellClick }: Props) {
+  const classes = ['small-board', isLegal ? 'legal' : 'inactive', board.winner ? 'finished' : ''].join(' ');
   return (
-    <section className={`small-board ${isLegal ? 'legal' : 'inactive'} ${board.result ? 'finished' : ''}`}>
-      <div className="small-board-title">Board {boardIndex + 1}</div>
-      <div className="cells" aria-label={`Board ${boardIndex + 1}${isLegal ? ' legal' : ' inactive'}`}>
-        {board.cells.map((mark, cellIndex) => (
-          <button
-            key={cellIndex}
-            className="cell"
-            onClick={() => onMove(boardIndex, cellIndex)}
-            disabled={!isLegal || Boolean(mark) || Boolean(board.result)}
-            aria-label={`Board ${boardIndex + 1} cell ${cellIndex + 1}`}
-          >
-            {mark}
-          </button>
-        ))}
-      </div>
-      {label && <div className="board-result">{label}</div>}
-    </section>
+    <div className={classes} aria-label={`Board ${boardIndex + 1}`}>
+      {board.cells.map((cell, cellIndex) => (
+        <button
+          key={cellIndex}
+          className="cell"
+          onClick={() => onCellClick(boardIndex, cellIndex)}
+          aria-label={`Board ${boardIndex + 1} cell ${cellIndex + 1}`}
+          disabled={!isLegal || board.winner !== null || cell !== null}
+        >
+          {cell ?? ''}
+        </button>
+      ))}
+      {board.winner && <div className={`overlay ${board.winner === 'draw' ? 'draw' : ''}`}>{board.winner === 'draw' ? 'Draw' : board.winner}</div>}
+    </div>
   );
 }

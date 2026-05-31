@@ -1,6 +1,26 @@
-import type { BoardResult, GameResult, GameState, Move, Player, SmallBoard } from './types';
+export type Player = 'X' | 'O';
+export type Cell = Player | null;
+export type BoardResult = Player | 'draw' | null;
 
-const WIN_LINES = [
+export interface SmallBoardState {
+  cells: Cell[];
+  winner: BoardResult;
+}
+
+export interface GameState {
+  smallBoards: SmallBoardState[];
+  largeBoard: BoardResult[];
+  currentPlayer: Player;
+  nextBoard: number | null;
+  gameWinner: BoardResult;
+  message: string;
+}
+
+export type MoveResult =
+  | { accepted: true; state: GameState }
+  | { accepted: false; state: GameState; reason: 'game-over' | 'illegal-board' | 'occupied-cell' | 'finished-board' };
+
+const WINS = [
   [0, 1, 2],
   [3, 4, 5],
   [6, 7, 8],
@@ -13,97 +33,79 @@ const WIN_LINES = [
 
 export function createInitialState(): GameState {
   return {
-    boards: Array.from({ length: 9 }, createSmallBoard),
+    smallBoards: Array.from({ length: 9 }, () => ({ cells: Array<Cell>(9).fill(null), winner: null })),
+    largeBoard: Array<BoardResult>(9).fill(null),
     currentPlayer: 'X',
-    nextBoardIndex: null,
-    gameResult: null,
+    nextBoard: null,
+    gameWinner: null,
     message: 'X starts. Play anywhere.',
   };
 }
 
-function createSmallBoard(): SmallBoard {
-  return { cells: Array.from({ length: 9 }, () => null), result: null };
+export function resetGame(_state?: GameState): GameState {
+  return createInitialState();
 }
 
-export function getLegalBoardIndexes(state: GameState): number[] {
-  if (state.gameResult) return [];
-  if (state.nextBoardIndex !== null && !state.boards[state.nextBoardIndex].result) {
-    return [state.nextBoardIndex];
-  }
-  return state.boards.flatMap((board, index) => (board.result ? [] : [index]));
+export function getLegalBoards(state: GameState): number[] {
+  if (state.gameWinner) return [];
+  if (state.nextBoard !== null && isBoardPlayable(state, state.nextBoard)) return [state.nextBoard];
+  return state.smallBoards
+    .map((board, index) => (board.winner === null && board.cells.some((cell) => cell === null) ? index : -1))
+    .filter((index) => index >= 0);
 }
 
-export function playMove(state: GameState, move: Move): GameState {
-  if (!isValidIndex(move.boardIndex) || !isValidIndex(move.cellIndex) || state.gameResult) return state;
+export function playMove(state: GameState, boardIndex: number, cellIndex: number): MoveResult {
+  if (state.gameWinner) return { accepted: false, state, reason: 'game-over' };
+  const board = state.smallBoards[boardIndex];
+  if (!board) return { accepted: false, state, reason: 'illegal-board' };
+  if (!getLegalBoards(state).includes(boardIndex)) return { accepted: false, state, reason: 'illegal-board' };
+  if (board.winner !== null) return { accepted: false, state, reason: 'finished-board' };
+  if (board.cells[cellIndex] !== null) return { accepted: false, state, reason: 'occupied-cell' };
 
-  const legalBoards = getLegalBoardIndexes(state);
-  if (!legalBoards.includes(move.boardIndex)) return state;
-
-  const board = state.boards[move.boardIndex];
-  if (board.result || board.cells[move.cellIndex]) return state;
-
-  const boards = state.boards.map((candidate, index) =>
-    index === move.boardIndex
-      ? { ...candidate, cells: replaceAt(candidate.cells, move.cellIndex, state.currentPlayer) }
-      : { ...candidate, cells: [...candidate.cells] },
+  const smallBoards = state.smallBoards.map((small, index) =>
+    index === boardIndex ? { ...small, cells: small.cells.map((cell, i) => (i === cellIndex ? state.currentPlayer : cell)) } : small,
   );
 
-  boards[move.boardIndex].result = evaluateCells(boards[move.boardIndex].cells);
-  const gameResult = evaluateLargeBoard(boards);
-  const nextPlayer = otherPlayer(state.currentPlayer);
-  const rawNextBoard = move.cellIndex;
-  const nextBoardIndex = boards[rawNextBoard].result ? null : rawNextBoard;
+  const changedBoard = smallBoards[boardIndex];
+  const smallWinner = calculateResult(changedBoard.cells);
+  if (smallWinner) changedBoard.winner = smallWinner;
 
-  return {
-    boards,
-    currentPlayer: gameResult ? state.currentPlayer : nextPlayer,
-    nextBoardIndex: gameResult ? null : nextBoardIndex,
-    gameResult,
-    message: buildMessage(gameResult, nextPlayer, nextBoardIndex),
+  const largeBoard = smallBoards.map((small) => small.winner);
+  const gameWinner = calculateResult(largeBoard);
+  const nextPlayer = state.currentPlayer === 'X' ? 'O' : 'X';
+  const destinationPlayable = !gameWinner && isSmallBoardPlayable(smallBoards[cellIndex]);
+  const nextBoard = destinationPlayable ? cellIndex : null;
+
+  const nextState: GameState = {
+    smallBoards,
+    largeBoard,
+    currentPlayer: gameWinner ? state.currentPlayer : nextPlayer,
+    nextBoard,
+    gameWinner,
+    message: makeMessage(gameWinner, nextPlayer, nextBoard),
   };
+
+  return { accepted: true, state: nextState };
 }
 
-function isValidIndex(index: number): boolean {
-  return Number.isInteger(index) && index >= 0 && index < 9;
+function isBoardPlayable(state: GameState, boardIndex: number): boolean {
+  return isSmallBoardPlayable(state.smallBoards[boardIndex]);
 }
 
-function replaceAt<T>(items: T[], index: number, value: T): T[] {
-  const next = [...items];
-  next[index] = value;
-  return next;
+function isSmallBoardPlayable(board: SmallBoardState): boolean {
+  return board.winner === null && board.cells.some((cell) => cell === null);
 }
 
-function otherPlayer(player: Player): Player {
-  return player === 'X' ? 'O' : 'X';
-}
-
-function evaluateCells(cells: (Player | null)[]): BoardResult {
-  const winner = findWinner(cells);
-  if (winner) return { winner };
-  if (cells.every(Boolean)) return { draw: true };
-  return null;
-}
-
-function evaluateLargeBoard(boards: SmallBoard[]): GameResult {
-  const largeCells = boards.map((board) => (board.result && 'winner' in board.result ? board.result.winner : null));
-  const winner = findWinner(largeCells);
-  if (winner) return { winner };
-  if (boards.every((board) => board.result)) return { draw: true };
-  return null;
-}
-
-function findWinner(cells: (Player | null)[]): Player | null {
-  for (const [a, b, c] of WIN_LINES) {
-    if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
+function calculateResult(cells: BoardResult[]): BoardResult {
+  for (const [a, b, c] of WINS) {
+    if (cells[a] && cells[a] !== 'draw' && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
   }
-  return null;
+  return cells.every((cell) => cell !== null) ? 'draw' : null;
 }
 
-function buildMessage(gameResult: GameResult, nextPlayer: Player, nextBoardIndex: number | null): string {
-  if (gameResult) {
-    if ('winner' in gameResult) return `${gameResult.winner} wins the game!`;
-    return 'The game is a draw.';
-  }
-  if (nextBoardIndex === null) return `${nextPlayer} to move. Play any unfinished board.`;
-  return `${nextPlayer} to move. Play board ${nextBoardIndex + 1}.`;
+function makeMessage(gameWinner: BoardResult, nextPlayer: Player, nextBoard: number | null): string {
+  if (gameWinner === 'draw') return 'Game drawn. Reset to play again.';
+  if (gameWinner) return `${gameWinner} wins the game!`;
+  if (nextBoard === null) return `${nextPlayer} to move. Play in any unfinished board.`;
+  return `${nextPlayer} to move. Play board ${nextBoard + 1}.`;
 }

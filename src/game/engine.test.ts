@@ -1,54 +1,78 @@
-import { describe, expect, it } from 'vitest';
-import { createInitialState, getLegalBoardIndexes, playMove } from './engine';
+import { describe, expect, test } from 'vitest';
+import { createInitialState, getLegalBoards, playMove, resetGame, type GameState } from './engine';
 
-const cell = (boardIndex: number, cellIndex: number) => ({ boardIndex, cellIndex });
+function allowAny(state: GameState): GameState {
+  return { ...state, nextBoard: null };
+}
 
 describe('Ultimate Tic-Tac-Toe engine', () => {
-  it('starts with X to move and all boards legal', () => {
+  test('initial state has X to move and all boards legal', () => {
     const state = createInitialState();
     expect(state.currentPlayer).toBe('X');
-    expect(getLegalBoardIndexes(state)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(state.gameResult).toBeNull();
+    expect(getLegalBoards(state)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
-  it('sends the next player to the board matching the chosen cell', () => {
-    const state = playMove(createInitialState(), cell(4, 0));
-    expect(state.currentPlayer).toBe('O');
-    expect(state.nextBoardIndex).toBe(0);
-    expect(getLegalBoardIndexes(state)).toEqual([0]);
+  test('a move sends the next player to the matching board', () => {
+    const result = playMove(createInitialState(), 4, 2);
+    expect(result.accepted).toBe(true);
+    expect(result.state.currentPlayer).toBe('O');
+    expect(result.state.nextBoard).toBe(2);
+    expect(getLegalBoards(result.state)).toEqual([2]);
   });
 
-  it('rejects occupied cells and illegal boards without changing turns', () => {
-    const first = playMove(createInitialState(), cell(4, 0));
-    const occupied = playMove(first, cell(4, 0));
-    const illegalBoard = playMove(first, cell(1, 1));
-    expect(occupied).toEqual(first);
-    expect(illegalBoard).toEqual(first);
+  test('occupied cells are rejected without changing turn', () => {
+    const first = playMove(createInitialState(), 4, 4).state;
+    const second = playMove(first, 4, 4);
+    expect(second.accepted).toBe(false);
+    if (second.accepted) throw new Error('expected occupied cell rejection');
+    expect(second.state).toBe(first);
+    expect(second.reason).toBe('occupied-cell');
   });
 
-  it('claims a small board when a player gets three in a row', () => {
-    const state = createInitialState();
-    state.boards[3].cells = ['X', 'X', null, null, null, null, null, null, null];
-    state.nextBoardIndex = 3;
-    const won = playMove(state, cell(3, 2));
-    expect(won.boards[3].result).toEqual({ winner: 'X' });
+  test('illegal boards are rejected without changing turn', () => {
+    const first = playMove(createInitialState(), 4, 2).state;
+    const second = playMove(first, 1, 0);
+    expect(second.accepted).toBe(false);
+    if (second.accepted) throw new Error('expected illegal board rejection');
+    expect(second.state).toBe(first);
+    expect(second.reason).toBe('illegal-board');
   });
 
-  it('allows any unfinished board when sent to a finished board', () => {
-    const state = createInitialState();
-    state.boards[3].result = { winner: 'X' };
-    const next = playMove(state, cell(0, 3));
-    expect(next.nextBoardIndex).toBeNull();
-    expect(getLegalBoardIndexes(next)).toEqual([0, 1, 2, 4, 5, 6, 7, 8]);
+  test('small board wins are detected', () => {
+    let state = createInitialState();
+    state = allowAny(playMove(state, 4, 0).state);
+    state = allowAny(playMove(state, 0, 3).state);
+    state = allowAny(playMove(state, 4, 1).state);
+    state = allowAny(playMove(state, 1, 4).state);
+    state = playMove(state, 4, 2).state;
+    expect(state.smallBoards[4].winner).toBe('X');
+    expect(state.largeBoard[4]).toBe('X');
   });
 
-  it('declares a large-board winner when a player claims three small boards in a row', () => {
-    const state = createInitialState();
-    state.boards[0].result = { winner: 'X' };
-    state.boards[1].result = { winner: 'X' };
-    state.boards[2].cells = ['X', 'X', null, null, null, null, null, null, null];
-    state.nextBoardIndex = 2;
-    const won = playMove(state, cell(2, 2));
-    expect(won.gameResult).toEqual({ winner: 'X' });
+  test('won destination boards allow any unfinished board', () => {
+    let state = createInitialState();
+    state.smallBoards[2].winner = 'O';
+    state.largeBoard[2] = 'O';
+    state = playMove(state, 4, 2).state;
+    expect(state.nextBoard).toBe(null);
+    expect(getLegalBoards(state)).toContain(0);
+    expect(getLegalBoards(state)).toContain(4);
+    expect(getLegalBoards(state)).not.toContain(2);
+  });
+
+  test('large board wins are detected', () => {
+    let state = createInitialState();
+    state.smallBoards[0].winner = 'X';
+    state.smallBoards[1].winner = 'X';
+    state.smallBoards[2].cells = ['X', 'X', null, 'O', 'O', null, null, null, null];
+    state.largeBoard = ['X', 'X', null, null, null, null, null, null, null];
+    state = allowAny(state);
+    const result = playMove(state, 2, 2).state;
+    expect(result.gameWinner).toBe('X');
+  });
+
+  test('reset returns to initial state', () => {
+    const moved = playMove(createInitialState(), 4, 2).state;
+    expect(resetGame(moved)).toEqual(createInitialState());
   });
 });

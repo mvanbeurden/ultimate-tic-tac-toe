@@ -1,24 +1,24 @@
-import type { GameState } from '../game/types';
-import SmallBoard from './SmallBoard';
+import type { GameState } from '../game/engine';
+import { SmallBoard } from './SmallBoard';
 
 interface Props {
-  state: GameState;
+  game: GameState;
   legalBoards: number[];
-  onMove: (boardIndex: number, cellIndex: number) => void;
+  onCellClick: (boardIndex: number, cellIndex: number) => void;
 }
 
-export default function LargeBoard({ state, legalBoards, onMove }: Props) {
+export function LargeBoard({ game, legalBoards, onCellClick }: Props) {
   return (
-    <div className="large-board" aria-label="Ultimate tic-tac-toe board">
-      {state.boards.map((board, index) => (
+    <section className="large-board" aria-label="Ultimate Tic-Tac-Toe board">
+      {game.smallBoards.map((board, index) => (
         <SmallBoard
           key={index}
           board={board}
           boardIndex={index}
           isLegal={legalBoards.includes(index)}
-          onMove={onMove}
+          onCellClick={onCellClick}
         />
       ))}
-    </div>
+    </section>
   );
 }
